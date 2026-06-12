@@ -3,7 +3,8 @@ import { validate, createNotebookSchema } from '../lib/validate'
 import {
   buildNotebook,
   buildPage,
-  writeNewNotebookToInbox
+  writeNewNotebookToInbox,
+  deriveAgentName
 } from '../lib/inkbook'
 import { TOOL_NAME, Block } from '../types'
 
@@ -76,6 +77,10 @@ export const createNotebook: ToolDefinition = {
         model: {
           type: 'string',
           description: 'The model identifier writing this notebook. Used for agent attribution in the app.'
+        },
+        agent_name: {
+          type: 'string',
+          description: 'Optional display name for the writing agent. Overrides the value derived from `model` (Claude, GPT, Gemini, …).'
         }
       }
     }
@@ -96,7 +101,7 @@ export const createNotebook: ToolDefinition = {
         page_template: input.page_template,
         page_size: input.page_size,
         agent: {
-          written_by: 'Claude',
+          written_by: deriveAgentName(input.model, input.agent_name),
           model: input.model,
           tool: TOOL_NAME,
           tool_version: TOOL_VERSION

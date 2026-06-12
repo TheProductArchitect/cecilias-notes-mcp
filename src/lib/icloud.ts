@@ -19,39 +19,81 @@ export function iCloudAvailable(): boolean {
   return process.platform === 'darwin' && fs.existsSync(CONTAINER_ROOT)
 }
 
+export const ICLOUD_MISSING_MESSAGE =
+  'Cecilia\'s Notes iCloud container not found.\n\n' +
+  'Please ensure:\n' +
+  '  1. You are on macOS with iCloud Drive enabled\n' +
+  '  2. Cecilia\'s Notes is installed on your iPad and signed in to the same Apple ID\n' +
+  '  3. iCloud Drive has had time to sync at least once\n\n' +
+  `Expected path: ${CONTAINER_ROOT}`
+
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
   }
 }
 
-function requireContainer(): void {
+export function requireIcloud(): void {
   if (!iCloudAvailable()) {
-    throw new Error(
-      'Cecilia\'s Notes iCloud container not found.\n\n' +
-      'Please ensure:\n' +
-      '  1. You are on macOS with iCloud Drive enabled\n' +
-      '  2. Cecilia\'s Notes is installed on your iPad and signed in to the same Apple ID\n' +
-      '  3. iCloud Drive has had time to sync at least once\n\n' +
-      `Expected path: ${CONTAINER_ROOT}`
-    )
+    throw new Error(ICLOUD_MISSING_MESSAGE)
   }
 }
 
 export function getInboxRoot(): string {
-  requireContainer()
+  requireIcloud()
   ensureDir(INBOX_ROOT)
   return INBOX_ROOT
 }
 
 export function getMcpNotebooksRoot(): string {
-  requireContainer()
+  requireIcloud()
   ensureDir(MCP_NOTEBOOKS_ROOT)
   return MCP_NOTEBOOKS_ROOT
 }
 
+/**
+ * Returns the path of an existing mirror file matching `notebookId`
+ * case-insensitively (Swift's UUID().uuidString is uppercase, ours is lowercase;
+ * on case-sensitive volumes a direct join misses).
+ * Returns the lowercase-keyed path even if the file doesn't exist yet.
+ */
 export function getMcpNotebookPath(notebookId: string): string {
-  return path.join(getMcpNotebooksRoot(), `${notebookId}.inkbook`)
+  const root = getMcpNotebooksRoot()
+  const direct = path.join(root, `${notebookId}.inkbook`)
+  if (fs.existsSync(direct)) return direct
+  const wanted = `${notebookId}.inkbook`.toLowerCase()
+  try {
+    for (const entry of fs.readdirSync(root)) {
+      if (entry.toLowerCase() === wanted) return path.join(root, entry)
+    }
+  } catch {}
+  return direct
+}
+
+/**
+ * Fallback to find a notebook the app hasn't mirrored yet — scan Inbox for a
+ * file whose top-level `id` matches the requested id (case-insensitive).
+ */
+export function findInboxNotebookById(notebookId: string): string | null {
+  let inbox: string
+  try { inbox = getInboxRoot() } catch { return null }
+  const wantedId = notebookId.toLowerCase()
+  const wantedName = `${notebookId}.inkbook`.toLowerCase()
+  let entries: string[]
+  try { entries = fs.readdirSync(inbox) } catch { return null }
+  for (const entry of entries) {
+    if (!entry.endsWith('.inkbook')) continue
+    const full = path.join(inbox, entry)
+    if (entry.toLowerCase() === wantedName) return full
+    try {
+      const raw = fs.readFileSync(full, 'utf-8')
+      const parsed = JSON.parse(raw)
+      if (typeof parsed?.id === 'string' && parsed.id.toLowerCase() === wantedId) {
+        return full
+      }
+    } catch {}
+  }
+  return null
 }
 
 export function getInboxNotebookPath(notebookId: string): string {
@@ -62,11 +104,6 @@ export function getInboxRequestPath(filename: string): string {
   return path.join(getInboxRoot(), filename)
 }
 
-/**
- * Returns a non-colliding path inside Inbox for a new notebook keyed by title.
- * If `<title>.inkbook` exists, appends `(2)`, `(3)`, … until unique.
- * Used by create_notebook so a different-id notebook never overwrites an existing file.
- */
 export function getUniqueInboxTitlePath(title: string): string {
   const inbox = getInboxRoot()
   const base = sanitizeFilename(title) || 'Untitled'

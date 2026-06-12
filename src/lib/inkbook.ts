@@ -1,6 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID } from 'crypto'
 import {
   Inkbook, Page, Block, AgentInfo,
   CoverTone, PageTemplate, PageSize,
@@ -13,7 +13,8 @@ import {
   getMcpNotebookPath,
   getInboxNotebookPath,
   getInboxRequestPath,
-  getUniqueInboxTitlePath
+  getUniqueInboxTitlePath,
+  findInboxNotebookById
 } from './icloud'
 
 // ── Read ────────────────────────────────────────────────────────────────────
@@ -39,8 +40,17 @@ export function readInkbookFile(filePath: string): Inkbook {
   return nb
 }
 
+/**
+ * Resolve a notebook by id, preferring the app-maintained mirror but falling
+ * back to the most recent Inbox write so a freshly-created notebook is visible
+ * before the iPad has had a chance to mirror it back.
+ */
 export function readNotebookById(notebookId: string): Inkbook {
-  return readInkbookFile(getMcpNotebookPath(notebookId))
+  const mirrorPath = getMcpNotebookPath(notebookId)
+  if (fs.existsSync(mirrorPath)) return readInkbookFile(mirrorPath)
+  const inboxPath = findInboxNotebookById(notebookId)
+  if (inboxPath) return readInkbookFile(inboxPath)
+  throw new Error(`Notebook ${notebookId} not found`)
 }
 
 // ── Atomic write ────────────────────────────────────────────────────────────
@@ -49,6 +59,25 @@ function writeJsonAtomic(filePath: string, data: unknown): void {
   const tmpPath = `${filePath}.tmp`
   fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
   fs.renameSync(tmpPath, filePath)
+}
+
+// ── Agent attribution ───────────────────────────────────────────────────────
+
+/**
+ * Best-effort attribution for the `written_by` field.
+ * Prefers an explicit override, then derives from the model prefix.
+ */
+export function deriveAgentName(model?: string, override?: string): string {
+  if (override && override.trim()) return override.trim()
+  if (!model) return 'Agent'
+  const m = model.toLowerCase()
+  if (m.startsWith('claude')) return 'Claude'
+  if (m.startsWith('gpt') || m.startsWith('o1') || m.startsWith('o3') || m.startsWith('o4')) return 'GPT'
+  if (m.startsWith('gemini')) return 'Gemini'
+  if (m.startsWith('grok')) return 'Grok'
+  if (m.startsWith('llama')) return 'Llama'
+  if (m.startsWith('mistral')) return 'Mistral'
+  return 'Agent'
 }
 
 // ── Create ──────────────────────────────────────────────────────────────────
@@ -65,7 +94,7 @@ export function buildNotebook(params: {
   return {
     $schema: INKBOOK_SCHEMA_URL,
     version: INKBOOK_SCHEMA_VERSION,
-    id: uuidv4(),
+    id: randomUUID(),
     title: params.title,
     subject: params.subject,
     created_at: now,
@@ -80,42 +109,43 @@ export function buildNotebook(params: {
 
 export function buildPage(blocks: Block[], index: number): Page {
   return {
-    id: uuidv4(),
+    id: randomUUID(),
     index,
     created_at: new Date().toISOString(),
-    blocks: blocks.map(b => ({ ...b, id: uuidv4() }))
+    blocks: blocks.map(b => ({ ...b, id: randomUUID() }))
   }
 }
 
 /**
- * Writes a brand-new notebook to Inbox under a non-colliding title-based filename.
- * Returns the resolved file path.
+ * Brand-new notebook → Inbox under a non-colliding title-based filename.
  */
 export function writeNewNotebookToInbox(notebook: Inkbook): string {
   const filePath = getUniqueInboxTitlePath(notebook.title)
   notebook.updated_at = new Date().toISOString()
+  notebook.mcp_action = 'create'
   writeJsonAtomic(filePath, notebook)
   return filePath
 }
 
 /**
- * Writes an updated notebook back to Inbox keyed by its UUID.
- * Used by append_to_notebook — the app dedupes by id and replaces pages wholesale.
+ * Updated notebook (append) → Inbox keyed by UUID.
+ * Records the base updated_at so the app can detect divergence
+ * with iPad-side edits and avoid clobbering them.
  */
-export function writeUpdatedNotebookToInbox(notebook: Inkbook): string {
+export function writeUpdatedNotebookToInbox(
+  notebook: Inkbook,
+  baseUpdatedAt: string
+): string {
   const filePath = getInboxNotebookPath(notebook.id)
   notebook.updated_at = new Date().toISOString()
+  notebook.base_updated_at = baseUpdatedAt
+  notebook.mcp_action = 'append'
   writeJsonAtomic(filePath, notebook)
   return filePath
 }
 
-/**
- * Writes a delete-request JSON file to Inbox.
- * The app watches Inbox/, dispatches by the `delete_notebook_request_` prefix,
- * performs the soft delete, and removes both the mirror and the request file.
- */
 export function writeDeleteRequest(notebookId: string): string {
-  getInboxRoot() // ensure Inbox exists
+  getInboxRoot()
   const filePath = getInboxRequestPath(`delete_notebook_request_${notebookId}.json`)
   const payload = { action: 'delete_notebook', notebook_id: notebookId }
   writeJsonAtomic(filePath, payload)
@@ -159,7 +189,7 @@ export function listAllNotebooks(): Array<NotebookSummary & { path: string }> {
           : null
       })
     } catch {
-      // Skip malformed files silently
+      // skip malformed files
     }
   }
 

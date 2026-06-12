@@ -61,7 +61,7 @@ export const appendToNotebook: ToolDefinition = {
       let notebook
       try {
         notebook = readNotebookById(input.notebook_id)
-      } catch {
+      } catch (_e) {
         return {
           content: [{
             type: 'text' as const,
@@ -71,6 +71,7 @@ export const appendToNotebook: ToolDefinition = {
         }
       }
 
+      const baseUpdatedAt = notebook.updated_at
       const addedStart = notebook.pages.length
       input.pages.forEach((blocks) => {
         notebook.pages.push(buildPage(blocks as Block[], notebook.pages.length))
@@ -81,7 +82,7 @@ export const appendToNotebook: ToolDefinition = {
         page.index = i
       })
 
-      const filePath = writeUpdatedNotebookToInbox(notebook)
+      const filePath = writeUpdatedNotebookToInbox(notebook, baseUpdatedAt)
 
       return {
         content: [{

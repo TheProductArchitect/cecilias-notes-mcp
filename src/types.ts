@@ -58,6 +58,8 @@ export interface AgentInfo {
   tool_version: string
 }
 
+export type McpAction = 'create' | 'append' | 'replace'
+
 export interface Inkbook {
   $schema: typeof INKBOOK_SCHEMA_URL
   version: typeof INKBOOK_SCHEMA_VERSION
@@ -70,6 +72,10 @@ export interface Inkbook {
   page_template?: PageTemplate
   page_size?: PageSize
   agent?: AgentInfo
+  /** Optimistic concurrency: the updated_at observed before this write. */
+  base_updated_at?: string
+  /** Discriminator the app uses to pick create/append/replace import strategy. */
+  mcp_action?: McpAction
   pages: Page[]
 }
 
@@ -81,6 +87,7 @@ export interface CreateNotebookInput {
   page_template?: PageTemplate
   page_size?: PageSize
   model?: string
+  agent_name?: string
 }
 
 export interface AppendToNotebookInput {

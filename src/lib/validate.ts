@@ -56,7 +56,8 @@ export const createNotebookSchema = z.object({
     'blank', 'lined', 'grid', 'dot-grid', 'cornell', 'music'
   ]).optional(),
   page_size: z.enum(['a4', 'letter', 'ipad-canvas']).optional(),
-  model: z.string().optional()
+  model: z.string().optional(),
+  agent_name: z.string().max(80).optional()
 })
 
 const uuidSchema = z.string().uuid('must be a valid UUID')
