@@ -12,7 +12,10 @@ permissions:
 jobs:
   smoke:
     name: smoke
-    runs-on: ubuntu-latest
+    # macOS runner because package.json declares "os": ["darwin"] (this is a
+    # macOS-only tool — it talks to the local iCloud container). Smoke test
+    # uses CECILIAS_NOTES_CONTAINER to point at a temp dir, no real iCloud needed.
+    runs-on: macos-latest
     steps:
       - name: Check out
         uses: actions/checkout@v4
