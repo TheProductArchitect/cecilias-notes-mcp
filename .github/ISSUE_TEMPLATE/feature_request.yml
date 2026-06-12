@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a new tool, parameter, or capability.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What can't you do today? Who is affected — agents, end-users, or both?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Rough sketch — tool name, input shape, behaviour. No need to be precise.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds that exist today, or other shapes you ruled out.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      description: Tick what applies. This helps decide if it ships here or in the iPad app.
+      options:
+        - label: Pure MCP-side (no app-side change required)
+        - label: Requires a change in the iPad app's importer or mirror writer
+        - label: Requires a change to the `.inkbook` v1 schema

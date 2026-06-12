@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question about the iPad app
+    url: https://venugopinath.me/cecilias-notes
+    about: This repo only covers the MCP server. For the iPad app, please use the project page.

@@ -1,0 +1,3 @@
+# Every file in this repo is owned by the maintainer.
+# CODEOWNERS approvals are required to merge into main (see branch protection).
+*       @TheProductArchitect
