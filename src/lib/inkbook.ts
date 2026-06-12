@@ -99,7 +99,10 @@ export function buildNotebook(params: {
     created_at: now,
     updated_at: now,
     cover_tone: params.cover_tone,
-    page_template: params.page_template ?? 'lined',
+    // page_template intentionally left undefined when caller omits it so the
+    // iPad app's "blank" default (v1.2 importer) applies. Pass an explicit
+    // value when the notebook should be ruled / grid / cornell / music.
+    page_template: params.page_template,
     page_size: params.page_size ?? 'a4',
     agent: params.agent,
     pages: []

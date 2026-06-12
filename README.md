@@ -62,13 +62,29 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
+## Block vocabulary
+
+Notebooks are made of pages; pages are arrays of typed blocks. The iPad
+renderer styles each type natively — agents should use the structural
+forms rather than collapsing prose into one paragraph.
+
+| Block | Shape | Use it for |
+|---|---|---|
+| `heading` | `{ type, content, level: 1\|2\|3 }` | Section titles |
+| `paragraph` | `{ type, content }` | Body prose (split at logical breaks) |
+| `list` | `{ type, style: "bullet"\|"numbered", items: [...] }` | 3+ parallel items |
+| `code` | `{ type, content, language? }` | Monospaced code or terminal output |
+| `quote` | `{ type, content, attribution? }` | Citing a person or source |
+| `callout` | `{ type, content, kind: "note"\|"warning"\|"tip" }` | Short emphasised aside |
+| `divider` | `{ type }` | Visual break between sections |
+
 ## Tools
 
 ### `create_notebook`
 
-Create a new notebook. Generates a UUID, writes the file to Inbox under a
-title-based filename (with a numeric suffix if a file by that name already
-exists).
+Create a new notebook. Generates an uppercase UUID, writes the file to
+Inbox under a title-based filename (with a numeric suffix if a file by
+that name already exists).
 
 **Input**
 ```jsonc
@@ -77,7 +93,8 @@ exists).
   "subject": "Research",            // required ("" for uncategorised)
   "pages": [ [ /* blocks */ ] ],    // required, at least one page
   "cover_tone": "parchment",        // optional
-  "page_template": "lined",         // optional, default: "lined"
+  "page_template": "blank",         // optional. Omit → app default (blank).
+                                    // "blank" | "lined" | "grid" | "dot-grid" | "cornell" | "music"
   "page_size": "a4",                // optional, default: "a4"
   "model": "claude-opus-4"          // optional, attributed in the app
 }
@@ -101,13 +118,11 @@ app dedupes by id and replaces pages wholesale.
 
 **Returns** `{ success, notebook_id, pages_added, total_pages, appended_page_indices, file, message }`
 
-> ⚠️ **Known limitation — block flattening.** The current iPad app flattens
-> structured blocks (headings, callouts, lists) into a single paragraph when
-> it mirrors a notebook back to `MCP/notebooks/`. Because
-> `append_to_notebook` re-writes the whole notebook from that mirror,
-> appending to a notebook the iPad has already mirrored can permanently
-> flatten its original formatting. This will be fixed app-side; until then,
-> prefer `create_notebook` over `append_to_notebook` when block fidelity matters.
+> 📐 **Block fidelity.** As of the iPad app's v1.2 importer, mirrored
+> notebooks preserve their original block structure, and `append_to_notebook`
+> merges by page id — existing pages keep their blocks, only the new pages
+> this call adds are inserted. Write new pages using the full block
+> vocabulary; don't collapse content into a single paragraph.
 
 ### `list_notebooks`
 
