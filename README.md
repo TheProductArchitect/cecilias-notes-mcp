@@ -156,7 +156,7 @@ can recover the notebook from the app for 30 days.
 ## The .inkbook format
 
 Notebooks are stored as JSON files with the `.inkbook` extension.
-The format spec is open: https://ceciliasnotes.app/schemas/inkbook/v1.json
+The format spec is open: https://venugopinath.me/cecilias-notes/schemas/inkbook/v1.json
 
 ## Example usage
 

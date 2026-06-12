@@ -1,5 +1,5 @@
 export const INKBOOK_SCHEMA_VERSION = '1' as const
-export const INKBOOK_SCHEMA_URL = 'https://ceciliasnotes.app/inkbook/v1' as const
+export const INKBOOK_SCHEMA_URL = 'https://venugopinath.me/cecilias-notes/schemas/inkbook/v1.json' as const
 export const TOOL_NAME = 'cecilias-notes-mcp' as const
 
 export type CoverTone =
