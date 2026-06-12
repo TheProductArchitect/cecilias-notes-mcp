@@ -1,6 +1,6 @@
 # cecilias-notes-mcp
 
-MCP server for [Cecilia's Notes](https://ceciliasnotes.app) — lets any
+MCP server for [Cecilia's Notes](https://venugopinath.me/cecilias-notes) — lets any
 MCP-compatible AI agent create and read notebooks that appear on your
 iPad via iCloud sync.
 
