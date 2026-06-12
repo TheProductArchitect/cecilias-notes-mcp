@@ -1,5 +1,5 @@
 import { ToolDefinition } from './index'
-import { validate, searchNotesSchema } from '../lib/validate'
+import { validate, searchNotesSchema, toolInputSchema } from '../lib/validate'
 import { searchNotebooks } from '../lib/inkbook'
 
 export const searchNotes: ToolDefinition = {
@@ -11,17 +11,7 @@ export const searchNotes: ToolDefinition = {
       'Returns matching notebooks with the page indices where the query was found.',
       'Optionally restrict the search to a single subject.'
     ].join('\n'),
-    inputSchema: {
-      type: 'object' as const,
-      required: ['query'],
-      properties: {
-        query: { type: 'string', description: 'The text to search for.' },
-        subject: {
-          type: 'string',
-          description: 'Optional subject filter (case-insensitive).'
-        }
-      }
-    }
+    inputSchema: toolInputSchema(searchNotesSchema)
   },
 
   handler: async (args: unknown) => {

@@ -1,5 +1,5 @@
 import { ToolDefinition } from './index'
-import { validate, appendToNotebookSchema } from '../lib/validate'
+import { validate, appendToNotebookSchema, toolInputSchema } from '../lib/validate'
 import {
   readNotebookById,
   buildPage,
@@ -17,37 +17,7 @@ export const appendToNotebook: ToolDefinition = {
       'every page index is re-numbered from 0, and the updated notebook is written',
       'back to Inbox. The app dedupes by id and replaces pages wholesale.'
     ].join('\n'),
-    inputSchema: {
-      type: 'object' as const,
-      required: ['notebook_id', 'pages'],
-      properties: {
-        notebook_id: {
-          type: 'string',
-          description: 'UUID of the existing notebook to append to.'
-        },
-        pages: {
-          type: 'array',
-          description: 'Pages to append. Each page is an array of blocks (same shape as create_notebook).',
-          items: {
-            type: 'array',
-            items: {
-              type: 'object',
-              required: ['type'],
-              properties: {
-                type: { type: 'string', enum: ['heading','paragraph','list','code','divider','quote','callout'] },
-                content: { type: 'string' },
-                level: { type: 'number', enum: [1,2,3] },
-                style: { type: 'string', enum: ['bullet','numbered'] },
-                items: { type: 'array', items: { type: 'string' } },
-                language: { type: 'string' },
-                attribution: { type: 'string' },
-                kind: { type: 'string', enum: ['note','warning','tip'] }
-              }
-            }
-          }
-        }
-      }
-    }
+    inputSchema: toolInputSchema(appendToNotebookSchema)
   },
 
   handler: async (args: unknown) => {

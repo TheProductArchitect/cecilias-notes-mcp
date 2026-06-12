@@ -1,6 +1,12 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { randomUUID } from 'crypto'
+
+/** Match Swift's UUID().uuidString casing so app-written and MCP-written
+ *  files use identical filenames on case-sensitive volumes. */
+function newId(): string {
+  return randomUUID().toUpperCase()
+}
 import {
   Inkbook, Page, Block, AgentInfo,
   CoverTone, PageTemplate, PageSize,
@@ -64,20 +70,13 @@ function writeJsonAtomic(filePath: string, data: unknown): void {
 // ── Agent attribution ───────────────────────────────────────────────────────
 
 /**
- * Best-effort attribution for the `written_by` field.
- * Prefers an explicit override, then derives from the model prefix.
+ * Attribution for the `written_by` field. Always uses the caller-supplied
+ * agent_name (trimmed) and falls back to a neutral default so the package
+ * doesn't claim a specific model/vendor wrote a notebook.
  */
-export function deriveAgentName(model?: string, override?: string): string {
-  if (override && override.trim()) return override.trim()
-  if (!model) return 'Agent'
-  const m = model.toLowerCase()
-  if (m.startsWith('claude')) return 'Claude'
-  if (m.startsWith('gpt') || m.startsWith('o1') || m.startsWith('o3') || m.startsWith('o4')) return 'GPT'
-  if (m.startsWith('gemini')) return 'Gemini'
-  if (m.startsWith('grok')) return 'Grok'
-  if (m.startsWith('llama')) return 'Llama'
-  if (m.startsWith('mistral')) return 'Mistral'
-  return 'Agent'
+export function resolveAgentName(agentName?: string): string {
+  const trimmed = agentName?.trim()
+  return trimmed && trimmed.length > 0 ? trimmed : 'AI agent'
 }
 
 // ── Create ──────────────────────────────────────────────────────────────────
@@ -94,7 +93,7 @@ export function buildNotebook(params: {
   return {
     $schema: INKBOOK_SCHEMA_URL,
     version: INKBOOK_SCHEMA_VERSION,
-    id: randomUUID(),
+    id: newId(),
     title: params.title,
     subject: params.subject,
     created_at: now,
@@ -109,10 +108,10 @@ export function buildNotebook(params: {
 
 export function buildPage(blocks: Block[], index: number): Page {
   return {
-    id: randomUUID(),
+    id: newId(),
     index,
     created_at: new Date().toISOString(),
-    blocks: blocks.map(b => ({ ...b, id: randomUUID() }))
+    blocks: blocks.map(b => ({ ...b, id: newId() }))
   }
 }
 
@@ -154,46 +153,71 @@ export function writeDeleteRequest(notebookId: string): string {
 
 // ── List ────────────────────────────────────────────────────────────────────
 
+function summaryFromNotebook(
+  nb: Inkbook,
+  filePath: string,
+  pendingSync: boolean
+): NotebookSummary & { path: string } {
+  return {
+    path: filePath,
+    id: nb.id,
+    title: nb.title,
+    subject: nb.subject,
+    created_at: nb.created_at,
+    updated_at: nb.updated_at,
+    page_count: nb.pages.length,
+    page_size: nb.page_size,
+    page_template: nb.page_template,
+    agent: nb.agent
+      ? { written_by: nb.agent.written_by, model: nb.agent.model }
+      : null,
+    pending_sync: pendingSync
+  }
+}
+
+function readDirSafe(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir).filter(f => f.endsWith('.inkbook'))
+  } catch {
+    return []
+  }
+}
+
 export function listAllNotebooks(): Array<NotebookSummary & { path: string }> {
-  let root: string
-  try {
-    root = getMcpNotebooksRoot()
-  } catch {
-    return []
-  }
+  // Prefer the app-maintained mirror; fall back to Inbox-only entries so
+  // freshly-created notebooks show up before the iPad has mirrored them back.
+  const byId = new Map<string, NotebookSummary & { path: string }>()
 
-  let files: string[]
-  try {
-    files = fs.readdirSync(root).filter(f => f.endsWith('.inkbook'))
-  } catch {
-    return []
-  }
+  let mirrorRoot: string | null = null
+  try { mirrorRoot = getMcpNotebooksRoot() } catch {}
 
-  const results: Array<NotebookSummary & { path: string }> = []
-  for (const file of files) {
-    const filePath = path.join(root, file)
-    try {
-      const nb = readInkbookFile(filePath)
-      results.push({
-        path: filePath,
-        id: nb.id,
-        title: nb.title,
-        subject: nb.subject,
-        created_at: nb.created_at,
-        updated_at: nb.updated_at,
-        page_count: nb.pages.length,
-        page_size: nb.page_size,
-        page_template: nb.page_template,
-        agent: nb.agent
-          ? { written_by: nb.agent.written_by, model: nb.agent.model }
-          : null
-      })
-    } catch {
-      // skip malformed files
+  if (mirrorRoot) {
+    for (const file of readDirSafe(mirrorRoot)) {
+      const filePath = path.join(mirrorRoot, file)
+      try {
+        const nb = readInkbookFile(filePath)
+        byId.set(nb.id.toLowerCase(), summaryFromNotebook(nb, filePath, false))
+      } catch {}
     }
   }
 
-  return results.sort(
+  let inboxRoot: string | null = null
+  try { inboxRoot = getInboxRoot() } catch {}
+
+  if (inboxRoot) {
+    for (const file of readDirSafe(inboxRoot)) {
+      const filePath = path.join(inboxRoot, file)
+      try {
+        const nb = readInkbookFile(filePath)
+        const key = nb.id.toLowerCase()
+        if (!byId.has(key)) {
+          byId.set(key, summaryFromNotebook(nb, filePath, true))
+        }
+      } catch {}
+    }
+  }
+
+  return [...byId.values()].sort(
     (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
   )
 }

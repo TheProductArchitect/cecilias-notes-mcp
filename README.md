@@ -101,6 +101,14 @@ app dedupes by id and replaces pages wholesale.
 
 **Returns** `{ success, notebook_id, pages_added, total_pages, appended_page_indices, file, message }`
 
+> ⚠️ **Known limitation — block flattening.** The current iPad app flattens
+> structured blocks (headings, callouts, lists) into a single paragraph when
+> it mirrors a notebook back to `MCP/notebooks/`. Because
+> `append_to_notebook` re-writes the whole notebook from that mirror,
+> appending to a notebook the iPad has already mirrored can permanently
+> flatten its original formatting. This will be fixed app-side; until then,
+> prefer `create_notebook` over `append_to_notebook` when block fidelity matters.
+
 ### `list_notebooks`
 
 List the notebooks in the MCP mirror. Returns summaries only — no page content.

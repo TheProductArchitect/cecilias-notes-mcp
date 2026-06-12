@@ -1,6 +1,6 @@
 {
   "name": "cecilias-notes-mcp",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "MCP server for Cecilia's Notes — write notebooks from any AI agent",
   "main": "dist/index.js",
   "files": [
@@ -17,11 +17,13 @@
     "build": "tsc",
     "dev": "ts-node src/index.ts",
     "setup": "ts-node src/setup.ts",
+    "test": "npm run build && node test/smoke.mjs",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "zod": "^3.22.0"
+    "zod": "^3.22.0",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

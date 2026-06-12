@@ -1,10 +1,10 @@
 import { ToolDefinition } from './index'
-import { validate, createNotebookSchema } from '../lib/validate'
+import { validate, createNotebookSchema, toolInputSchema } from '../lib/validate'
 import {
   buildNotebook,
   buildPage,
   writeNewNotebookToInbox,
-  deriveAgentName
+  resolveAgentName
 } from '../lib/inkbook'
 import { TOOL_NAME, Block } from '../types'
 
@@ -24,66 +24,7 @@ export const createNotebook: ToolDefinition = {
       '',
       'Returns the notebook id — save it to append more pages, read, or delete later.'
     ].join('\n'),
-    inputSchema: {
-      type: 'object' as const,
-      required: ['title', 'subject', 'pages'],
-      properties: {
-        title: {
-          type: 'string',
-          description: 'Notebook title. Shown on the cover card. Under 40 characters renders best.'
-        },
-        subject: {
-          type: 'string',
-          description: 'Subject. Examples: "Research", "Work", "Personal", "Ideas". Empty string for uncategorised.'
-        },
-        pages: {
-          type: 'array',
-          description: 'Array of pages. Each page is an array of blocks.',
-          items: {
-            type: 'array',
-            description: 'One page — array of content blocks.',
-            items: {
-              type: 'object',
-              description: 'A content block. See block types: heading, paragraph, list, code, divider, quote, callout.',
-              required: ['type'],
-              properties: {
-                type: { type: 'string', enum: ['heading','paragraph','list','code','divider','quote','callout'] },
-                content: { type: 'string', description: 'Text content. Required for all types except list and divider.' },
-                level: { type: 'number', enum: [1,2,3], description: 'Required for heading blocks.' },
-                style: { type: 'string', enum: ['bullet','numbered'], description: 'Required for list blocks.' },
-                items: { type: 'array', items: { type: 'string' }, description: 'Required for list blocks.' },
-                language: { type: 'string', description: 'Optional programming language for code blocks.' },
-                attribution: { type: 'string', description: 'Optional attribution for quote blocks.' },
-                kind: { type: 'string', enum: ['note','warning','tip'], description: 'Required for callout blocks.' }
-              }
-            }
-          }
-        },
-        cover_tone: {
-          type: 'string',
-          enum: ['parchment','studio-white','ash','coal','midnight','moss','dusk','ink-black'],
-          description: 'Cover colour. Omit to let the app assign automatically.'
-        },
-        page_template: {
-          type: 'string',
-          enum: ['blank','lined','grid','dot-grid','cornell','music'],
-          description: 'Page template. Default: lined.'
-        },
-        page_size: {
-          type: 'string',
-          enum: ['a4','letter','ipad-canvas'],
-          description: 'Page size. Default: a4.'
-        },
-        model: {
-          type: 'string',
-          description: 'The model identifier writing this notebook. Used for agent attribution in the app.'
-        },
-        agent_name: {
-          type: 'string',
-          description: 'Optional display name for the writing agent. Overrides the value derived from `model` (Claude, GPT, Gemini, …).'
-        }
-      }
-    }
+    inputSchema: toolInputSchema(createNotebookSchema)
   },
 
   handler: async (args: unknown) => {
@@ -101,7 +42,7 @@ export const createNotebook: ToolDefinition = {
         page_template: input.page_template,
         page_size: input.page_size,
         agent: {
-          written_by: deriveAgentName(input.model, input.agent_name),
+          written_by: resolveAgentName(input.agent_name),
           model: input.model,
           tool: TOOL_NAME,
           tool_version: TOOL_VERSION

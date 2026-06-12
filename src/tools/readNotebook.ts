@@ -1,5 +1,5 @@
 import { ToolDefinition } from './index'
-import { validate, readNotebookSchema } from '../lib/validate'
+import { validate, readNotebookSchema, toolInputSchema } from '../lib/validate'
 import { readNotebookById } from '../lib/inkbook'
 
 export const readNotebook: ToolDefinition = {
@@ -7,15 +7,10 @@ export const readNotebook: ToolDefinition = {
     name: 'read_notebook',
     description: [
       'Read the full content of a notebook by its UUID.',
+      'Falls back to Inbox if the MCP mirror does not yet have the notebook.',
       'Returns the complete .inkbook JSON including all pages and blocks.'
     ].join('\n'),
-    inputSchema: {
-      type: 'object' as const,
-      required: ['notebook_id'],
-      properties: {
-        notebook_id: { type: 'string', description: 'UUID of the notebook to read.' }
-      }
-    }
+    inputSchema: toolInputSchema(readNotebookSchema)
   },
 
   handler: async (args: unknown) => {

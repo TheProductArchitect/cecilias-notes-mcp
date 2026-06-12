@@ -125,6 +125,8 @@ export interface NotebookSummary {
     written_by: string
     model?: string
   } | null
+  /** True when the notebook only exists in Inbox (not yet mirrored back by the iPad). */
+  pending_sync: boolean
 }
 
 export interface SearchResult {

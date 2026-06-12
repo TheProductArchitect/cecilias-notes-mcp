@@ -1,5 +1,5 @@
 import { ToolDefinition } from './index'
-import { validate, deleteNotebookSchema } from '../lib/validate'
+import { validate, deleteNotebookSchema, toolInputSchema } from '../lib/validate'
 import { writeDeleteRequest } from '../lib/inkbook'
 
 export const deleteNotebook: ToolDefinition = {
@@ -12,13 +12,7 @@ export const deleteNotebook: ToolDefinition = {
       'Returns immediately (fire-and-forget). The user can recover the notebook',
       'from the app for 30 days.'
     ].join('\n'),
-    inputSchema: {
-      type: 'object' as const,
-      required: ['notebook_id'],
-      properties: {
-        notebook_id: { type: 'string', description: 'UUID of the notebook to delete.' }
-      }
-    }
+    inputSchema: toolInputSchema(deleteNotebookSchema)
   },
 
   handler: async (args: unknown) => {

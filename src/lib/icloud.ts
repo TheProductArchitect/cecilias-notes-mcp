@@ -4,7 +4,11 @@ import * as fs from 'fs'
 
 const CONTAINER = 'iCloud~app~ceciliasnotes'
 
-export const CONTAINER_ROOT = path.join(
+/**
+ * Container root. Override via CECILIAS_NOTES_CONTAINER for tests/CI so the
+ * server can run without an iCloud Drive (defaults to the real iCloud path).
+ */
+export const CONTAINER_ROOT = process.env.CECILIAS_NOTES_CONTAINER ?? path.join(
   os.homedir(),
   'Library',
   'Mobile Documents',
@@ -16,7 +20,11 @@ export const INBOX_ROOT = path.join(CONTAINER_ROOT, 'Inbox')
 export const MCP_NOTEBOOKS_ROOT = path.join(CONTAINER_ROOT, 'MCP', 'notebooks')
 
 export function iCloudAvailable(): boolean {
-  return process.platform === 'darwin' && fs.existsSync(CONTAINER_ROOT)
+  // When CECILIAS_NOTES_CONTAINER is set, skip the platform check so the
+  // server runs in CI on any OS using a fake container directory.
+  const platformOk =
+    !!process.env.CECILIAS_NOTES_CONTAINER || process.platform === 'darwin'
+  return platformOk && fs.existsSync(CONTAINER_ROOT)
 }
 
 export const ICLOUD_MISSING_MESSAGE =

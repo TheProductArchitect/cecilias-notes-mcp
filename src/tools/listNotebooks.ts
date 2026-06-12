@@ -1,5 +1,5 @@
 import { ToolDefinition } from './index'
-import { validate, listNotebooksSchema } from '../lib/validate'
+import { validate, listNotebooksSchema, toolInputSchema } from '../lib/validate'
 import { listAllNotebooks } from '../lib/inkbook'
 
 export const listNotebooks: ToolDefinition = {
@@ -7,20 +7,14 @@ export const listNotebooks: ToolDefinition = {
     name: 'list_notebooks',
     description: [
       'List notebooks in Cecilia\'s Notes.',
-      'Reads the MCP mirror at MCP/notebooks/. Optionally filter by subject.',
+      'Reads the MCP mirror at MCP/notebooks/ and merges any notebooks still',
+      'queued in Inbox (marked pending_sync: true) so freshly-created notebooks',
+      'are visible before the iPad has had a chance to mirror them back.',
       'Returns id, title, subject, created_at, updated_at, page_count, page_size,',
-      'page_template, and agent info — but not page content. Use read_notebook for content.',
+      'page_template, agent, pending_sync — but not page content. Use read_notebook for content.',
       'Results are sorted by most recently updated.'
     ].join('\n'),
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        subject: {
-          type: 'string',
-          description: 'Filter to a single subject (case-insensitive).'
-        }
-      }
-    }
+    inputSchema: toolInputSchema(listNotebooksSchema)
   },
 
   handler: async (args: unknown) => {
