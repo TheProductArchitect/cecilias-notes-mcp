@@ -61,8 +61,8 @@ const pagesSchema = z.array(pageSchema).min(1).max(500)
 export const createNotebookSchema = z.object({
   title: z.string().min(1).max(200)
     .describe('Notebook title. Shown on the cover card; under 40 characters renders best.'),
-  subject: z.string().min(1).max(100)
-    .describe('Subject. Examples: "Research", "Work", "Personal", "Ideas". Empty string for uncategorised.'),
+  subject: z.string().min(1).max(100).optional()
+    .describe('Subject (folder) the notebook lives under. STRONGLY PREFER reusing an existing subject returned by list_subjects over inventing a new one — the iPad app creates a new subject the moment it sees a new name, which clutters the sidebar. Defaults to "inbox" if omitted; the user can re-file later.'),
   pages: pagesSchema,
   cover_tone: z.enum([
     'parchment', 'studio-white', 'ash', 'coal',
@@ -106,6 +106,8 @@ export const searchNotesSchema = z.object({
 export const deleteNotebookSchema = z.object({
   notebook_id: uuidSchema
 }).describe('Inputs for delete_notebook.')
+
+export const listSubjectsSchema = z.object({}).describe('No input.')
 
 // ── Bridge to MCP tool inputSchema ──────────────────────────────────────────
 

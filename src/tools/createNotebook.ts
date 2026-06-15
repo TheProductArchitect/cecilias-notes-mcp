@@ -4,7 +4,9 @@ import {
   buildNotebook,
   buildPage,
   writeNewNotebookToInbox,
-  resolveAgentName
+  resolveAgentName,
+  isNewSubject,
+  listAllSubjects
 } from '../lib/inkbook'
 import { TOOL_NAME, Block } from '../types'
 
@@ -16,6 +18,23 @@ export const createNotebook: ToolDefinition = {
     description: [
       'Create a new notebook in Cecilia\'s Notes. Appears on the user\'s iPad',
       'via iCloud sync within seconds.',
+      '',
+      '## ⚠️ Pick a subject deliberately',
+      'Subject is the folder the notebook lives under on the iPad. The app',
+      'CREATES a new subject the moment it sees a new name, so every imagined',
+      'subject permanently clutters the user\'s sidebar.',
+      '',
+      'Before calling this tool you SHOULD:',
+      '1. Call `list_subjects` to see what subjects already exist.',
+      '2. Pick the existing subject that best matches the notebook\'s topic',
+      '   semantically — e.g. a notebook on Lagrangian mechanics belongs in',
+      '   an existing "physics", not a new "classical-mechanics".',
+      '3. Only invent a new subject when NONE of the existing ones fit.',
+      '4. When in doubt, omit the `subject` field — it defaults to "inbox",',
+      '   the well-known unsorted bucket. The user can re-file later.',
+      '',
+      'If the user names a subject in their prompt ("save to my philosophy notes"),',
+      'use that subject verbatim — do not second-guess.',
       '',
       '## Write STRUCTURED content, not flat prose',
       'Pages are arrays of typed blocks. The iPad renderer styles each type',
@@ -89,9 +108,30 @@ export const createNotebook: ToolDefinition = {
     const input = validation.data
 
     try {
+      const explicitSubject = input.subject?.trim()
+      const resolvedSubject = explicitSubject && explicitSubject.length > 0
+        ? explicitSubject
+        : 'inbox'
+
+      const existingSubjects = listAllSubjects()
+      const subjectIsNew = isNewSubject(resolvedSubject)
+      if (subjectIsNew && resolvedSubject.toLowerCase() !== 'inbox') {
+        // Audit signal: surfaces in the MCP client's stderr so the user
+        // can see when an agent invented a new subject.
+        const reason = explicitSubject
+          ? 'explicitly requested'
+          : existingSubjects.length === 0
+            ? 'no existing subjects on disk'
+            : 'agent did not match any existing subject'
+        process.stderr.write(
+          `cecilias-notes-mcp: created notebook with NEW subject "${resolvedSubject}" (${reason}). ` +
+          `Existing subjects: ${existingSubjects.map(s => s.subject).join(', ') || '(none)'}\n`
+        )
+      }
+
       const notebook = buildNotebook({
         title: input.title,
-        subject: input.subject,
+        subject: resolvedSubject,
         cover_tone: input.cover_tone,
         page_template: input.page_template,
         page_size: input.page_size,
@@ -117,9 +157,13 @@ export const createNotebook: ToolDefinition = {
             notebook_id: notebook.id,
             title: notebook.title,
             subject: notebook.subject,
+            subject_is_new: subjectIsNew,
+            existing_subjects: existingSubjects.map(s => s.subject),
             pages: notebook.pages.length,
             file: filePath,
-            message: `Notebook "${notebook.title}" written to Inbox. It will appear on the user's iPad shortly via iCloud sync.`
+            message: subjectIsNew && resolvedSubject !== 'inbox'
+              ? `Notebook "${notebook.title}" written to Inbox under NEW subject "${notebook.subject}". The iPad will create this subject on import.`
+              : `Notebook "${notebook.title}" written to Inbox under subject "${notebook.subject}". It will appear on the user's iPad shortly via iCloud sync.`
           }, null, 2)
         }]
       }

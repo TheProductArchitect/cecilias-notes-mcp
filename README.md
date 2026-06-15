@@ -80,6 +80,17 @@ forms rather than collapsing prose into one paragraph.
 
 ## Tools
 
+### `list_subjects`
+
+Return the unique set of subjects currently in use across the user's notebooks,
+sorted by count descending. **Agents should call this before `create_notebook`**
+so they can reuse an existing subject rather than inventing a new one — the
+iPad app creates a new subject the moment it sees a new name in an import.
+
+**Input**: none.
+
+**Returns** `{ count, subjects: [ { subject, count } ] }`
+
 ### `create_notebook`
 
 Create a new notebook. Generates an uppercase UUID, writes the file to
@@ -90,7 +101,8 @@ that name already exists).
 ```jsonc
 {
   "title": "Coffee Shops",          // required
-  "subject": "Research",            // required ("" for uncategorised)
+  "subject": "Research",            // optional. Defaults to "inbox".
+                                    // PREFER reusing a subject returned by list_subjects.
   "pages": [ [ /* blocks */ ] ],    // required, at least one page
   "cover_tone": "parchment",        // optional
   "page_template": "blank",         // optional. Omit → app default (blank).
@@ -100,7 +112,7 @@ that name already exists).
 }
 ```
 
-**Returns** `{ success, notebook_id, title, subject, pages, file, message }`
+**Returns** `{ success, notebook_id, title, subject, subject_is_new, existing_subjects, pages, file, message }`
 
 ### `append_to_notebook`
 

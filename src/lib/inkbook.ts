@@ -274,6 +274,38 @@ export function searchNotebooks(query: string, subjectFilter?: string): SearchRe
   return results
 }
 
+// ── Subjects ────────────────────────────────────────────────────────────────
+
+export interface SubjectSummary {
+  subject: string
+  count: number
+}
+
+/**
+ * Returns the unique set of subjects currently in use across every notebook
+ * the MCP can see (mirror + Inbox, deduped by notebook id), sorted by count
+ * descending then alphabetically. The empty-string subject is filtered out —
+ * v1.2 of the app treats it as "uncategorised" and shouldn't be steered to.
+ */
+export function listAllSubjects(): SubjectSummary[] {
+  const counts = new Map<string, number>()
+  for (const nb of listAllNotebooks()) {
+    const s = nb.subject?.trim()
+    if (!s) continue
+    counts.set(s, (counts.get(s) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([subject, count]) => ({ subject, count }))
+    .sort((a, b) => b.count - a.count || a.subject.localeCompare(b.subject))
+}
+
+/** Case-insensitive membership check used to decide whether to warn on stderr. */
+export function isNewSubject(subject: string): boolean {
+  const wanted = subject.trim().toLowerCase()
+  if (!wanted) return false
+  return !listAllSubjects().some(s => s.subject.toLowerCase() === wanted)
+}
+
 function blockToPlainText(block: Block): string {
   switch (block.type) {
     case 'heading':
