@@ -1,5 +1,7 @@
 import { ToolDefinition } from './index'
 import { validate, createNotebookSchema, toolInputSchema } from '../lib/validate'
+import * as fs from 'fs'
+import * as path from 'path'
 import {
   buildNotebook,
   buildPage,
@@ -8,6 +10,7 @@ import {
   isNewSubject,
   listAllSubjects
 } from '../lib/inkbook'
+import { tryDeliverViaMultipeer } from '../lib/multipeer'
 import { TOOL_NAME, Block } from '../types'
 
 const TOOL_VERSION: string = require('../../package.json').version
@@ -147,7 +150,24 @@ export const createNotebook: ToolDefinition = {
         notebook.pages.push(buildPage(blocks as Block[], i))
       })
 
+      // iCloud Inbox write is the durable record; it always runs.
       const filePath = writeNewNotebookToInbox(notebook)
+      const fileBytes = fs.readFileSync(filePath)
+
+      // Best-effort multipeer accelerator. Falls back silently to iCloud.
+      const delivery = await tryDeliverViaMultipeer({
+        fileBytes,
+        filename: path.basename(filePath),
+        budgetMs: 2000
+      })
+
+      const baseMessage = subjectIsNew && resolvedSubject !== 'inbox'
+        ? `Notebook "${notebook.title}" written to Inbox under NEW subject "${notebook.subject}". The iPad will create this subject on import.`
+        : `Notebook "${notebook.title}" written to Inbox under subject "${notebook.subject}".`
+
+      const deliveryMessage = delivery.transport === 'multipeer'
+        ? `Sent directly to "${delivery.peer}" in ${delivery.latency_ms}ms via multipeer.`
+        : `iCloud sync will deliver it to the iPad in ${delivery.estimated_latency_seconds[0]}–${delivery.estimated_latency_seconds[1]}s.`
 
       return {
         content: [{
@@ -161,9 +181,8 @@ export const createNotebook: ToolDefinition = {
             existing_subjects: existingSubjects.map(s => s.subject),
             pages: notebook.pages.length,
             file: filePath,
-            message: subjectIsNew && resolvedSubject !== 'inbox'
-              ? `Notebook "${notebook.title}" written to Inbox under NEW subject "${notebook.subject}". The iPad will create this subject on import.`
-              : `Notebook "${notebook.title}" written to Inbox under subject "${notebook.subject}". It will appear on the user's iPad shortly via iCloud sync.`
+            delivery,
+            message: `${baseMessage} ${deliveryMessage}`
           }, null, 2)
         }]
       }

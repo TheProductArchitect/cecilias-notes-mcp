@@ -1,4 +1,8 @@
 node_modules/
 dist/
+bin/
+swift-sidecar/.build/
+swift-sidecar/.swiftpm/
+swift-sidecar/Package.resolved
 *.log
 .DS_Store

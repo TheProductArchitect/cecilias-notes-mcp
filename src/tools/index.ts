@@ -6,6 +6,9 @@ import { listSubjects } from './listSubjects'
 import { readNotebook } from './readNotebook'
 import { searchNotes } from './searchNotes'
 import { deleteNotebook } from './deleteNotebook'
+import { pairIpad } from './pairIpad'
+import { listPairedIpads } from './listPairedIpads'
+import { forgetIpad } from './forgetIpad'
 
 export interface ToolDefinition {
   schema: Tool
@@ -19,5 +22,8 @@ export const toolRegistry: Record<string, ToolDefinition> = {
   list_subjects:      listSubjects,
   read_notebook:      readNotebook,
   search_notes:       searchNotes,
-  delete_notebook:    deleteNotebook
+  delete_notebook:    deleteNotebook,
+  pair_ipad:          pairIpad,
+  list_paired_ipads:  listPairedIpads,
+  forget_ipad:        forgetIpad
 }

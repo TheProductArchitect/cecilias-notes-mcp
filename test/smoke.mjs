@@ -18,7 +18,10 @@ const EXPECTED_TOOLS = [
   'list_subjects',
   'read_notebook',
   'search_notes',
-  'delete_notebook'
+  'delete_notebook',
+  'pair_ipad',
+  'list_paired_ipads',
+  'forget_ipad'
 ]
 
 const fail = (msg) => { console.error(`✗ ${msg}`); process.exit(1) }
@@ -40,7 +43,13 @@ async function withFreshServer(fn) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [SERVER_PATH],
-    env: { ...process.env, CECILIAS_NOTES_CONTAINER: tmp }
+    env: {
+      ...process.env,
+      CECILIAS_NOTES_CONTAINER: tmp,
+      // Smoke tests run without an iPad — disable multipeer to keep delivery
+      // results deterministic (transport: "icloud", fallback_reason: "multipeer_disabled").
+      CECILIAS_NOTES_DISABLE_MULTIPEER: '1'
+    }
   })
   const client = new Client(
     { name: 'cecilias-notes-mcp-smoke', version: '0.0.0' },
@@ -74,7 +83,7 @@ await withFreshServer(async ({ client }) => {
   if (!deepEqual(names, expected)) {
     fail(`tool set mismatch.\n  expected: ${expected.join(', ')}\n  got:      ${names.join(', ')}`)
   }
-  pass(`all 7 tools registered: ${names.join(', ')}`)
+  pass(`all ${EXPECTED_TOOLS.length} tools registered: ${names.join(', ')}`)
 
   for (const tool of tools) {
     if (!tool.inputSchema || tool.inputSchema.type !== 'object') {
@@ -107,6 +116,11 @@ await withFreshServer(async ({ client, tmp }) => {
     fail(`expected JSON subject "philosophy", got ${JSON.stringify(notebook.subject)}`)
   }
   pass('explicit subject="philosophy" round-trips verbatim into the .inkbook JSON')
+
+  if (result.delivery?.transport !== 'icloud' || result.delivery.fallback_reason !== 'multipeer_disabled') {
+    fail(`expected delivery={transport:"icloud", fallback_reason:"multipeer_disabled"}, got ${JSON.stringify(result.delivery)}`)
+  }
+  pass('delivery falls back to iCloud with fallback_reason="multipeer_disabled" when multipeer is off')
 })
 
 // ── Test 3: omitted subject defaults to "inbox". ─────────────────────────────
