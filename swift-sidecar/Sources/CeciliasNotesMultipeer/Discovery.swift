@@ -4,12 +4,12 @@ import MultipeerConnectivity
 /// Browses for `ceciliasnotes-sync` advertisers for `timeoutMs` milliseconds
 /// and reports every peer seen at least once during the window.
 final class Discovery: NSObject, MCNearbyServiceBrowserDelegate {
-    /// Per Documentation/MULTIPEER_SYNC_PROTOCOL.md the wire service type is
-    /// "ceciliasnotes-sync" (18 chars). MultipeerConnectivity enforces a 15-char
-    /// ceiling and throws NSException on init when violated, so we expose the
-    /// spec'd value but validate before constructing MC objects. See
-    /// `serviceTypeIsValid` and the PR notes for the protocol-side issue.
-    static let serviceType = "ceciliasnotes-sync"
+    /// Wire service type. Bumped from "ceciliasnotes-sync" (18 chars, over MC's
+    /// 15-char ceiling) to "cn-sync" (7 chars) in v2.1 of the protocol —
+    /// iPad commit f9c94a3 on branch `iphone-support` carries the matching
+    /// change. `serviceTypeIsValid` is retained as defence-in-depth in case
+    /// a future bump regresses past the limit.
+    static let serviceType = "cn-sync"
 
     static func serviceTypeIsValid(_ s: String = serviceType) -> Bool {
         guard s.count >= 1, s.count <= 15 else { return false }

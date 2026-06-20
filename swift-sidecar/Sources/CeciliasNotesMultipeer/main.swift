@@ -83,7 +83,7 @@ case "pair":
     let runner = SessionRunner(
         localPeer: localPeer,
         targetPeerName: peer,
-        action: .pairingHelloThenPing(candidateKey: candidateKey),
+        action: .pair(candidateKey: candidateKey),
         storedKey: nil,
         totalTimeoutMs: 8000
     )
@@ -96,12 +96,15 @@ case "pair":
         } catch {
             CLIOutput.emit(["ok": false, "reason": "keychain_write_failed"])
         }
-    case .pingTimeout:
-        // Pairing-hello with the wrong code → no pong. From the Mac's
-        // perspective we cannot distinguish "wrong code" from "window
-        // expired" or "peer disappeared" without an explicit signal from the
-        // iPad — surface as wrong_code, the most likely cause.
+    case .wrongCode:
         CLIOutput.emit(["ok": false, "reason": "wrong_code"])
+    case .noPairingWindow:
+        CLIOutput.emit(["ok": false, "reason": "no_pairing_window"])
+    case .peerUnreachable:
+        CLIOutput.emit(["ok": false, "reason": "peer_unreachable"])
+    case .pingTimeout:
+        // Should not occur on pair flow now, but map defensively.
+        CLIOutput.emit(["ok": false, "reason": "peer_unreachable"])
     case .noPeerVisible:
         CLIOutput.emit(["ok": false, "reason": "no_peer_visible"])
     case .hmacRejected:
@@ -152,6 +155,11 @@ case "send":
         ])
     case .pingTimeout:
         CLIOutput.emit(["ok": false, "reason": "ping_timeout"])
+    case .peerUnreachable:
+        CLIOutput.emit(["ok": false, "reason": "peer_unreachable"])
+    case .wrongCode, .noPairingWindow:
+        // Not reachable from file-send flow, but keep the switch exhaustive.
+        CLIOutput.emit(["ok": false, "reason": outcome.jsonReason])
     case .noPeerVisible:
         CLIOutput.emit(["ok": false, "reason": "no_peer_visible"])
     case .hmacRejected:

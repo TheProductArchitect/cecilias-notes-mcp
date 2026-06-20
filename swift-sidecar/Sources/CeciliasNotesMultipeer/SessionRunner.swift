@@ -11,6 +11,9 @@ final class SessionRunner: NSObject,
     enum Outcome {
         case success(latencyMs: Int)
         case pingTimeout
+        case peerUnreachable        // pairing analogue of pingTimeout
+        case wrongCode              // pairing-result: wrong_code
+        case noPairingWindow        // pairing-result: no_pairing_window
         case sessionFailed
         case noPeerVisible
         case hmacRejected
@@ -22,6 +25,9 @@ final class SessionRunner: NSObject,
             switch self {
             case .success: return "ok"
             case .pingTimeout: return "ping_timeout"
+            case .peerUnreachable: return "peer_unreachable"
+            case .wrongCode: return "wrong_code"
+            case .noPairingWindow: return "no_pairing_window"
             case .sessionFailed: return "session_failed"
             case .noPeerVisible: return "no_peer_visible"
             case .hmacRejected: return "hmac_rejected"
@@ -35,7 +41,7 @@ final class SessionRunner: NSObject,
     /// What the runner is trying to do once the session is up.
     enum Action {
         case ping
-        case pairingHelloThenPing(candidateKey: SymmetricKey)
+        case pair(candidateKey: SymmetricKey)
         case fileSend(filename: String, body: Data)
     }
 
@@ -54,10 +60,11 @@ final class SessionRunner: NSObject,
     private let completion = DispatchSemaphore(value: 0)
     private var completed = false
 
-    /// Effective HMAC key for ping/pong/file: candidate during pairing flow,
-    /// stored otherwise.
+    /// Effective HMAC key for ping/pong/file/pairing-result(ok): candidate
+    /// during the pairing flow, stored shared key otherwise. The unsigned-hint
+    /// pairing-result messages do not need this key.
     private var effectiveKey: SymmetricKey? {
-        if case let .pairingHelloThenPing(candidateKey) = action {
+        if case let .pair(candidateKey) = action {
             return candidateKey
         }
         return storedKey
@@ -134,7 +141,7 @@ final class SessionRunner: NSObject,
                 }
                 sendPing(to: peerID, key: key)
 
-            case .pairingHelloThenPing(let candidateKey):
+            case .pair(let candidateKey):
                 sendPairingHello(to: peerID, key: candidateKey)
             }
 
@@ -197,10 +204,12 @@ final class SessionRunner: NSObject,
             finishIfNeeded(.sessionFailed)
             return
         }
-        // After pairing-hello, immediately probe with a ping HMAC'd with the
-        // candidate key. A successful pong proves the iPad accepted the
-        // pairing and stored the same key.
-        sendPing(to: peer, key: key)
+        // The iPad replies with a `pairing-result` message (v2.1). 2-second
+        // window covers a slow Bluetooth handshake; the protocol's typical
+        // latency is well under 100ms.
+        DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(2000)) { [weak self] in
+            self?.finishIfNeeded(.peerUnreachable)
+        }
     }
 
     private func sendFile(to peer: MCPeerID, key: SymmetricKey, filename: String, body: Data) {
@@ -217,25 +226,33 @@ final class SessionRunner: NSObject,
     // MARK: - Receive
 
     private func handleIncoming(_ data: Data, from peerID: MCPeerID) {
-        guard let key = effectiveKey else { return }
         guard let parsed = try? Payload.parse(data) else { return }
         guard let typeStr = parsed.header["type"] as? String,
               let type = PayloadType(rawValue: typeStr) else { return }
 
+        // For the pairing-result hint cases the iPad sends a 32-byte all-zero
+        // HMAC by convention ("unsigned hint"). We accept those without key
+        // verification — an attacker can only force a retry, not a compromise.
+        // The success path is fully authenticated below.
+        if type == .pairingResult {
+            handlePairingResult(parsed.header, tag: parsed.tag, body: parsed.body)
+            return
+        }
+
+        guard let key = effectiveKey else { return }
+
         // Verify HMAC with whichever key we expect.
-        if !Crypto.verifyHMAC(parsed.tag,
-                              headerJSON: try! JSONSerialization.data(
-                                  withJSONObject: parsed.header, options: [.sortedKeys]
-                              ),
-                              body: parsed.body,
-                              key: key) {
+        let canonicalHeader = (try? JSONSerialization.data(
+            withJSONObject: parsed.header, options: [.sortedKeys]
+        )) ?? Data()
+        guard Crypto.verifyHMAC(parsed.tag, headerJSON: canonicalHeader, body: parsed.body, key: key) else {
             finishIfNeeded(.hmacRejected)
             return
         }
 
         if type == .pong {
-            // Pong: either the session is now alive (file-send action) or the
-            // pairing flow has confirmed the candidate key (pairing action).
+            // Only the file-send and bare-ping flows wait on pongs now. The
+            // pair flow waits on pairing-result.
             switch action {
             case .fileSend(let filename, let body):
                 guard let resolved = resolvedPeerID else {
@@ -244,10 +261,63 @@ final class SessionRunner: NSObject,
                 }
                 sendFile(to: resolved, key: key, filename: filename, body: body)
 
-            case .pairingHelloThenPing, .ping:
+            case .ping:
                 let latency = pingSentAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
                 finishIfNeeded(.success(latencyMs: latency))
+
+            case .pair:
+                // Unexpected — iPad shouldn't pong before pairing-result. Ignore.
+                break
             }
+        }
+    }
+
+    /// Dispatch the v2.1 `pairing-result` reply:
+    ///   - result: "ok"               → HMAC must verify with candidate key
+    ///   - result: "wrong_code"       → unsigned hint (32-byte all-zero HMAC)
+    ///   - result: "no_pairing_window"→ unsigned hint (32-byte all-zero HMAC)
+    private func handlePairingResult(_ header: [String: Any], tag: Data, body: Data) {
+        guard case let .pair(candidateKey) = action else { return }
+        guard let result = header["result"] as? String else {
+            finishIfNeeded(.other("malformed_pairing_result"))
+            return
+        }
+
+        switch result {
+        case "ok":
+            // MUST verify before treating pairing as confirmed.
+            let canonicalHeader = (try? JSONSerialization.data(
+                withJSONObject: header, options: [.sortedKeys]
+            )) ?? Data()
+            if Crypto.verifyHMAC(tag, headerJSON: canonicalHeader, body: body, key: candidateKey) {
+                let latency = pingSentAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
+                finishIfNeeded(.success(latencyMs: latency))
+            } else {
+                finishIfNeeded(.hmacRejected)
+            }
+
+        case "wrong_code":
+            // Unsigned hint — UI signal only; an attacker forging it can only
+            // cause the user to retry. We don't enforce the zero-HMAC convention
+            // strictly (any HMAC works as a hint) but we do log when it's
+            // anomalously non-zero so a real attack is at least visible.
+            if tag != unsignedHintHMAC {
+                FileHandle.standardError.write(
+                    Data("cecilias-notes-multipeer: wrong_code hint had non-zero HMAC (possible spoof)\n".utf8)
+                )
+            }
+            finishIfNeeded(.wrongCode)
+
+        case "no_pairing_window":
+            if tag != unsignedHintHMAC {
+                FileHandle.standardError.write(
+                    Data("cecilias-notes-multipeer: no_pairing_window hint had non-zero HMAC (possible spoof)\n".utf8)
+                )
+            }
+            finishIfNeeded(.noPairingWindow)
+
+        default:
+            finishIfNeeded(.other("unknown_pairing_result:\(result)"))
         }
     }
 

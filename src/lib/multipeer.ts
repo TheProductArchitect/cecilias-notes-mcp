@@ -15,6 +15,9 @@ export type DeliveryFallbackReason =
   | 'sidecar_unavailable'
   | 'no_peer_visible'
   | 'ping_timeout'
+  | 'peer_unreachable'        // pairing analogue of ping_timeout (v2.1)
+  | 'wrong_code'              // from pairing-result hint (v2.1)
+  | 'no_pairing_window'       // from pairing-result hint (v2.1)
   | 'session_failed'
   | 'user_not_paired'
   | 'hmac_rejected'

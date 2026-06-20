@@ -175,7 +175,8 @@ The `delivery` field is one of:
 // Fell back to iCloud (always durable)
 {
   "transport": "icloud",
-  "fallback_reason": "no_peer_visible" | "ping_timeout" | "session_failed"
+  "fallback_reason": "no_peer_visible" | "ping_timeout" | "peer_unreachable"
+                   | "wrong_code" | "no_pairing_window" | "session_failed"
                    | "user_not_paired" | "hmac_rejected" | "clock_skew"
                    | "multipeer_disabled" | "sidecar_unavailable"
                    | "service_type_invalid" | "sidecar_error",

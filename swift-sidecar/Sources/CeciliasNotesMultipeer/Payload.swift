@@ -10,9 +10,15 @@ import CryptoKit
 enum PayloadType: String {
     case file = "file"
     case pairingHello = "pairing-hello"
+    case pairingResult = "pairing-result"
     case ping = "ping"
     case pong = "pong"
 }
+
+/// Marker used by the v2.1 "unsigned hint" convention — pairing-result
+/// messages carrying wrong_code / no_pairing_window arrive with a 32-byte
+/// all-zero HMAC. The success path stays fully authenticated.
+let unsignedHintHMAC = Data(repeating: 0, count: 32)
 
 struct PayloadHeader {
     let type: PayloadType

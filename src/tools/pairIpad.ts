@@ -29,8 +29,9 @@ export const pairIpad: ToolDefinition = {
       'subsequent create_notebook calls auto-use multipeer.',
       '',
       'Returns: { ok: true, peer } on success, { ok: false, reason } otherwise.',
-      'Reasons: wrong_code, pairing_window_expired, no_peer_visible, sidecar_unavailable,',
-      'service_type_invalid (protocol issue — see PR notes).'
+      'Reasons (from the iPad\'s pairing-result reply or local checks):',
+      '  wrong_code | no_pairing_window | peer_unreachable | no_peer_visible',
+      '  | hmac_rejected | sidecar_unavailable | session_failed | keychain_write_failed.'
     ].join('\n'),
     inputSchema: toolInputSchema(pairIpadSchema)
   },
