@@ -78,7 +78,70 @@ forms rather than collapsing prose into one paragraph.
 | `callout` | `{ type, content, kind: "note"\|"warning"\|"tip" }` | Short emphasised aside |
 | `divider` | `{ type }` | Visual break between sections |
 
+## Direct delivery via multipeer (1.4.0+)
+
+`create_notebook` now writes to iCloud **and** tries to deliver the new
+`.inkbook` directly to a nearby iPad over Apple's MultipeerConnectivity
+framework. When it works, the notebook shows up on the iPad in ~1 second
+instead of waiting 30s–5min for iCloud. When it doesn't (no iPad nearby,
+iPad's multipeer toggle off, etc.) the iCloud write is the durable record
+and behaviour is identical to 1.3.0.
+
+The implementation is a Swift sidecar (`cecilias-notes-multipeer`) built
+on `npm postinstall`. Requirements:
+
+- macOS with Xcode Command Line Tools (`xcode-select --install`).
+- A paired iPad — pair once with `pair_ipad` (see below).
+- Both devices on the same Wi-Fi network or BT-PAN.
+
+If any of these isn't met, multipeer is silently disabled and iCloud
+delivery continues to work.
+
+### Pairing UX
+
+```
+User: create a notebook with my meeting notes
+Agent: [calls create_notebook → delivery.fallback_reason: "user_not_paired"]
+       Notebook is on iCloud and will sync in 30s–5min. Want to pair this
+       Mac with your iPad so future notebooks arrive instantly?
+
+User: yes
+Agent: Open Cecilia's Notes on your iPad → Settings → cloud → "show pairing
+       code". Tell me the 6 digits and your iPad's name.
+
+User: 481294, "Venu's iPad"
+Agent: [calls pair_ipad(peer="Venu's iPad", code="481294") → ok: true]
+       Paired! Next create_notebook will use multipeer.
+```
+
+### Multipeer tools
+
+| Tool | Purpose |
+|---|---|
+| `list_paired_ipads` | Show currently paired iPads + nearby unpaired ones. |
+| `pair_ipad` | Run the 6-digit-code pairing handshake. |
+| `forget_ipad` | Remove a paired iPad from the Mac's Keychain. |
+
+### Environment knobs
+
+| Var | Effect |
+|---|---|
+| `CECILIAS_NOTES_DISABLE_MULTIPEER=1` | Skip multipeer entirely; behave like 1.3.0. |
+| `CECILIAS_NOTES_SIDECAR_PATH=/path` | Use this binary path for the sidecar (testing). |
+| `CECILIAS_NOTES_CONTAINER=/path` | Override the iCloud container root (testing). |
+
 ## Tools
+
+### `list_subjects`
+
+Return the unique set of subjects currently in use across the user's notebooks,
+sorted by count descending. **Agents should call this before `create_notebook`**
+so they can reuse an existing subject rather than inventing a new one — the
+iPad app creates a new subject the moment it sees a new name in an import.
+
+**Input**: none.
+
+**Returns** `{ count, subjects: [ { subject, count } ] }`
 
 ### `create_notebook`
 
@@ -90,7 +153,8 @@ that name already exists).
 ```jsonc
 {
   "title": "Coffee Shops",          // required
-  "subject": "Research",            // required ("" for uncategorised)
+  "subject": "Research",            // optional. Defaults to "inbox".
+                                    // PREFER reusing a subject returned by list_subjects.
   "pages": [ [ /* blocks */ ] ],    // required, at least one page
   "cover_tone": "parchment",        // optional
   "page_template": "blank",         // optional. Omit → app default (blank).
@@ -100,7 +164,25 @@ that name already exists).
 }
 ```
 
-**Returns** `{ success, notebook_id, title, subject, pages, file, message }`
+**Returns** `{ success, notebook_id, title, subject, subject_is_new, existing_subjects, pages, file, delivery, message }`
+
+The `delivery` field is one of:
+
+```jsonc
+// Multipeer succeeded
+{ "transport": "multipeer", "peer": "Venu's iPad", "latency_ms": 847 }
+
+// Fell back to iCloud (always durable)
+{
+  "transport": "icloud",
+  "fallback_reason": "no_peer_visible" | "ping_timeout" | "peer_unreachable"
+                   | "wrong_code" | "no_pairing_window" | "session_failed"
+                   | "user_not_paired" | "hmac_rejected" | "clock_skew"
+                   | "multipeer_disabled" | "sidecar_unavailable"
+                   | "service_type_invalid" | "sidecar_error",
+  "estimated_latency_seconds": [30, 300]
+}
+```
 
 ### `append_to_notebook`
 
