@@ -61,9 +61,23 @@ export function readNotebookById(notebookId: string): Inkbook {
 
 // ── Atomic write ────────────────────────────────────────────────────────────
 
+/** The iPad app's importer rejects `.inkbook` files above this size
+ *  (CeciliasNotesParser.maxFileBytes). Refusing here gives the agent an
+ *  actionable error instead of a file that silently never imports. */
+export const MAX_INKBOOK_BYTES = 32 * 1024 * 1024
+
 function writeJsonAtomic(filePath: string, data: unknown): void {
+  const json = JSON.stringify(data, null, 2)
+  const bytes = Buffer.byteLength(json, 'utf-8')
+  if (bytes > MAX_INKBOOK_BYTES) {
+    throw new Error(
+      `Notebook is ${(bytes / 1024 / 1024).toFixed(1)} MB — the app imports files up to ` +
+      `${MAX_INKBOOK_BYTES / 1024 / 1024} MB. Split the content across several notebooks ` +
+      `or append in smaller batches.`
+    )
+  }
   const tmpPath = `${filePath}.tmp`
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
+  fs.writeFileSync(tmpPath, json, 'utf-8')
   fs.renameSync(tmpPath, filePath)
 }
 

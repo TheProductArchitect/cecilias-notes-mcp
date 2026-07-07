@@ -1,4 +1,4 @@
-# Multipeer Sync — Wire Protocol (v2 — authenticated)
+# Multipeer Sync — Wire Protocol (v2.3 — household exchange + hardening)
 
 Direct device-to-device notebook delivery from a Mac running
 `cecilias-notes-mcp` to an iPad running Cecilia's Notes, bypassing
@@ -23,15 +23,62 @@ peer-name-spoofing attacker who *also* establishes a session).
 
 ## Discovery
 
-- **Service type**: `ceciliasnotes-sync`
-- **Bonjour name**: `_ceciliasnotes-sync._tcp` (listed in the iPad's
+- **Service type**: `cn-sync`
+  - MultipeerConnectivity enforces a **15-character ceiling** on
+    `serviceType` (Apple's `MCNearbyServiceBrowser` throws
+    `NSInvalidArgumentException` above that). The earlier
+    `ceciliasnotes-sync` value (18 chars) was unusable; `cn-sync`
+    (7 chars) is the synchronised replacement on both sides.
+- **Bonjour name**: `_cn-sync._tcp` (listed in the iPad's
   Info.plist `NSBonjourServices`).
 - iPad **advertises** with `MCNearbyServiceAdvertiser`,
   `discoveryInfo = {"app": "ceciliasnotes", "platform": "ios", "v": "2"}`.
 - Mac MCP **browses** with `MCNearbyServiceBrowser` for the same
   service type, sends `invitePeer(...)` to start a session.
 
-## Pairing flow
+## First-party auto-pairing (v2.2)
+
+When both devices are signed into the same Apple ID, pairing
+should be automatic — no 6-digit code dance for your own
+iPad / iPhone / Mac.
+
+**Mechanism.** Each device generates (or fetches) a 32-byte
+random "household key" stored under
+`app.ceciliasnotes.multipeer.householdKey` in **iCloud Keychain**
+(`kSecAttrSynchronizable = true`, end-to-end encrypted by Apple).
+Every device signed into the same Apple ID converges on the same
+key within a few seconds of first launch.
+
+The advertise step includes
+`discoveryInfo["householdHash"] = SHA256(householdKey)[0..8].hex` so
+a browser can spot a same-household peer without learning the key
+itself. When the hashes match, the sender derives its pairing
+key via:
+
+- IKM = household key (32 bytes from iCloud Keychain)
+- Salt = `"ceciliasnotes.multipeer.v1.firstparty.salt"` (UTF-8)
+- Info = `"<localPeerName>|<remotePeerName>"` (UTF-8)
+- Output = 32 bytes
+
+…and signs a `pairing-hello` with the result. The iPad receiver
+runs the same derivation and accepts the pairing without any
+pairing window being open (no 6-digit code required). The
+auto-paired key is stored under the peer name in the *local*
+Keychain (synchronizable: false) just like a manual pairing.
+
+**Why it's safe.** iCloud Keychain is end-to-end encrypted — the
+household key never leaves Apple's E2E envelope. The
+`householdHash` in the discovery info is only useful for spotting
+same-household peers; reversing it to the key is infeasible (8
+bytes of SHA-256 over 32 bytes of CSPRNG output). The HMAC layer
+still authenticates every payload, and the per-peer-pair HKDF
+binding prevents key reuse across different device pairs.
+
+A Mac MCP running outside the user's Apple-ID environment (or
+without iCloud Keychain enabled) won't have the household key →
+falls through to the manual code path.
+
+## Pairing flow (manual, for third-party senders)
 
 First-time pairing is a separate, human-authorised step before any
 file payloads are accepted.
@@ -52,11 +99,37 @@ file payloads are accepted.
 
 ### Both sides
 
-7. iPad recomputes the HMAC with its own derived key. If they match
-   → pairing succeeds, the iPad stores the key in Keychain under
-   the Mac's peer name, and pairing mode is exited. If they don't
-   match → payload is dropped and pairing mode stays open for a
-   second attempt within the 90s window.
+7. iPad recomputes the HMAC with its own derived key, **and replies
+   with a typed `pairing-result` payload** (see schema below) so the
+   Mac can show the user the right error message instead of just
+   timing out on the post-pairing ping.
+
+   - HMAC match → iPad stores the key in Keychain under the Mac's
+     peer name, exits pairing mode, and sends
+     `pairing-result {result: "ok"}` HMAC-signed with the
+     derived key. The Mac MUST verify this HMAC before treating
+     the pairing as confirmed.
+   - HMAC mismatch (wrong code) → iPad sends
+     `pairing-result {result: "wrong_code"}` with an
+     **all-zeros HMAC tag** (unsigned hint — see below). Pairing
+     mode stays open for a second attempt within the 90s window.
+   - No pairing window open → iPad sends
+     `pairing-result {result: "no_pairing_window"}` with an
+     all-zeros HMAC tag.
+
+### The "unsigned hint" convention
+
+A header with an **all-zero 32-byte HMAC tag** is an *informational
+reply*, not an authenticated message. The Mac uses it only to render
+the right error UI; it confers no security guarantee. The threat
+model holds: an attacker who spoofs a `wrong_code` or
+`no_pairing_window` reply can only cause the user to retry, which
+isn't a compromise. The Mac MUST NOT treat an all-zero-HMAC payload
+as evidence of anything other than "some peer on the LAN said this".
+
+Only `pairing-result` uses this convention. `file`, `ping`, `pong`,
+and `pairing-hello` (the success-path `pairing-result` too) all
+require a verified HMAC.
 
 ### Key derivation (HKDF-SHA256)
 
@@ -97,8 +170,9 @@ A single binary blob sent via
 
 ```json
 {
-  "type": "file" | "pairing-hello" | "ping" | "pong",
+  "type": "file" | "pairing-hello" | "pairing-result" | "ping" | "pong",
   "filename": "Sketchbook.inkbook",
+  "result": "ok" | "wrong_code" | "no_pairing_window",
   "timestamp": 1718817100,
   "nonce": "<base64-16-bytes>"
 }
@@ -106,9 +180,14 @@ A single binary blob sent via
 
 - `type` is required:
   - `"file"` — notebook delivery
-  - `"pairing-hello"` — pairing handshake
+  - `"pairing-hello"` — pairing handshake (Mac → iPad)
+  - `"pairing-result"` — iPad's typed reply to a `pairing-hello`
   - `"ping"` — liveness probe sent by the Mac before a file payload
   - `"pong"` — iPad's reply to a `ping`
+- `result` is required when `type == "pairing-result"`. One of
+  `"ok"`, `"wrong_code"`, `"no_pairing_window"`. Future values
+  MAY be added; the Mac SHOULD treat an unknown value as a
+  generic failure.
 - `filename` is required when `type == "file"`. iPad strips path
   separators and rejects extensions other than `.inkbook` / `.json`.
 - `timestamp` is epoch seconds. Payloads outside a ±60 second window
@@ -127,12 +206,22 @@ The key is whichever key applies:
 - For `type == "pairing-hello"`: the candidate key derived from the
   active pairing code. Only one payload at a time can succeed
   here, and only while the iPad is in pairing mode.
+- For `type == "pairing-result"` with `result == "ok"`: the
+  derived/stored key — same key the Mac used to sign the
+  `pairing-hello`. Verifying this is how the Mac confirms the
+  pairing succeeded.
+- For `type == "pairing-result"` with `result == "wrong_code"` or
+  `"no_pairing_window"`: a 32-byte all-zero tag (the "unsigned
+  hint" convention above). The Mac MUST NOT attempt to verify
+  these; treat them as UI hints only.
 
 ### Body
 
 - For `type == "file"`: raw file bytes (the `.inkbook` blob itself).
 - For `type == "pairing-hello"`: empty (zero bytes). Pairing
   succeeds based on the HMAC match alone — no payload necessary.
+- For `type == "pairing-result"`: empty (zero bytes). The
+  `result` lives in the header.
 - For `type == "ping"` and `type == "pong"`: empty (zero bytes).
 
 ## Ping / pong (liveness probe)
@@ -189,11 +278,18 @@ so the duplicate is a no-op.
 
 ## Failure modes the Mac side should handle
 
-- **Pairing window expired** → user has to re-tap "show pairing
-  code" on the iPad and retry. iPad surface a transient error in
-  its status.
-- **HMAC mismatch** → iPad reports `"Wrong pairing code from <Mac>"`.
-  Mac should treat this as "wrong code typed; ask user again".
+- **Pairing window expired / not open** → iPad replies
+  `pairing-result {result: "no_pairing_window"}` (unsigned hint).
+  Mac surfaces: "iPad isn't in pairing mode — re-tap *show
+  pairing code* on the iPad and try again."
+- **Wrong code typed** → iPad replies
+  `pairing-result {result: "wrong_code"}` (unsigned hint).
+  Mac surfaces: "Wrong pairing code — try again." Pairing mode
+  on the iPad stays open until the 90s window elapses.
+- **No `pairing-result` arrives at all** → peer crashed, went out
+  of range, or is on an old build that doesn't speak v2.1. Mac
+  falls back to iCloud and reports `peer_unreachable` (NOT
+  `wrong_code` — the previous version had to guess).
 - **Stale timestamp** → iPad reports `"Stale payload"`. Mac's
   clock is more than 60 seconds off the iPad's; check NTP.
 - **Replay nonce** → iPad reports `"Replay detected"`. Mac should
@@ -225,7 +321,7 @@ let peerID = MCPeerID(displayName: Host.current().localizedName ?? "Mac")
 let session = MCSession(peer: peerID, securityIdentity: nil,
                         encryptionPreference: .required)
 let browser = MCNearbyServiceBrowser(peer: peerID,
-                                     serviceType: "ceciliasnotes-sync")
+                                     serviceType: "cn-sync")
 // browser.delegate, etc.
 
 // ---- Pairing ----
@@ -284,6 +380,35 @@ try session.send(fpayload, toPeers: [iPadPeer], with: .reliable)
 
 ---
 
+## v2.3 additions (all additive / optional)
+
+- **`householdHash` in pairing headers.** `pairing-hello` MAY carry
+  `"householdHash": "<16-hex-chars>"` (the sender's household token
+  hash, same value as the discoveryInfo key). A successful
+  `pairing-result {result: "ok"}` MAY carry the receiver's hash
+  back. Both sides record the peer's hash so UI can distinguish
+  "same Apple Account — notebooks sync via iCloud" from "different
+  Apple Account — use Send to Device". Old builds omit/ignore the
+  key; nothing breaks.
+- **Wrong-code attempt cap.** The receiver closes the pairing
+  window after **5** `pairing-hello` payloads that fail HMAC
+  verification (reply: `no_pairing_window`). Nonce/timestamp checks
+  don't slow a brute-forcer (it controls both fields); the cap
+  does. The legitimate user just taps "show pairing code" again.
+- **Payload size cap.** `file` payload bodies above **32 MB**
+  (`CeciliasNotesParser.maxFileBytes`) are rejected — matching the
+  importer's own cap, so an oversized send fails fast at the wire
+  instead of silently never importing.
+- **Bidirectional browsing.** Every platform now runs both the
+  advertiser AND the browser lane (previously only the Mac
+  browsed). Two same-household iOS devices form up to two
+  independent MCSessions (one per direction); receivers handle
+  payloads on both, and duplicate change-hints are harmless.
+- **`file` payloads flow both ways.** The in-app "Send to Device"
+  feature ships a notebook's `.inkbook` over the paired link from
+  ANY platform. The receiver treats it exactly like an MCP write:
+  Inbox → importer → merge-by-default.
+
 ## Versioning
 
 - Header JSON is the extensibility point. Add new keys; the iPad
@@ -292,8 +417,8 @@ try session.send(fpayload, toPeers: [iPadPeer], with: .reliable)
   forward-compatible.
 - Bumping the framing format (length prefix + HMAC layout) breaks
   the iPad — to upgrade, introduce a new `serviceType`
-  (`ceciliasnotes-sync-v3`) and have the iPad advertise both for a
-  transition window.
+  (`cn-sync-v3`, **kept under the 15-char Bonjour ceiling**) and
+  have the iPad advertise both for a transition window.
 - Pairing-key versioning is folded into the HKDF salt
   (`ceciliasnotes.multipeer.v1.salt`). Rotating the salt would
   invalidate every existing pairing and force re-pairing.

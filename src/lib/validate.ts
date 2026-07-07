@@ -70,7 +70,7 @@ export const createNotebookSchema = z.object({
   ]).optional().describe('Cover colour. Omit to let the app assign automatically.'),
   page_template: z.enum([
     'blank', 'lined', 'grid', 'dot-grid', 'cornell', 'music'
-  ]).optional().describe('Page template. Default: lined.'),
+  ]).optional().describe('Page template preference. Note: agent-authored notebooks always RENDER on blank white pages (typed text never aligns with rule spacing); the value is stored and round-tripped but does not change rendering.'),
   page_size: z.enum(['a4', 'letter', 'ipad-canvas']).optional()
     .describe('Page size. Default: a4.'),
   model: z.string().optional()
