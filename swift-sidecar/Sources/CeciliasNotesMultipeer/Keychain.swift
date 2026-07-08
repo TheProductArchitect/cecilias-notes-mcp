@@ -86,4 +86,31 @@ enum Keychain {
         guard status == errSecSuccess, let array = item as? [[String: Any]] else { return [] }
         return array.compactMap { $0[kSecAttrAccount as String] as? String }.sorted()
     }
+
+    // MARK: - Household key (first-party auto-pair)
+
+    /// The iCloud-Keychain household secret the Cecilia's Notes apps
+    /// share across the user's Apple Account. Written by the apps
+    /// (`MultipeerPairingStore.householdKey`); the sidecar only reads.
+    /// Reading another process's keychain item makes macOS show a
+    /// one-time consent prompt naming the sidecar — "Always Allow"
+    /// makes auto-pair silent afterwards. Returns nil when the user
+    /// isn't signed into iCloud Keychain, has never launched a
+    /// Cecilia's Notes app, or denied access.
+    static let householdService = "app.ceciliasnotes.multipeer.householdKey"
+
+    static func loadHouseholdKey() -> SymmetricKey? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: householdService,
+            kSecAttrAccount as String: "household",
+            kSecAttrSynchronizable as String: kSecAttrSynchronizableAny,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data, data.count == 32 else { return nil }
+        return SymmetricKey(data: data)
+    }
 }

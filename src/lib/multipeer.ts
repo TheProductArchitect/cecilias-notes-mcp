@@ -133,12 +133,18 @@ export async function listPairedPeers(): Promise<string[]> {
   return Array.isArray(parsed?.peers) ? (parsed!.peers as string[]) : []
 }
 
-export async function pairPeer(peer: string, code: string): Promise<{ ok: true; peer: string } | { ok: false; reason: string; detail?: string }> {
+export async function pairPeer(peer: string, code?: string): Promise<{ ok: true; peer: string } | { ok: false; reason: string; detail?: string }> {
   if (multipeerDisabled()) return { ok: false, reason: 'multipeer_disabled' }
   const bin = sidecarPath()
   if (!bin) return { ok: false, reason: 'sidecar_unavailable' }
 
-  const result = await runSidecar(bin, ['pair', '--peer', peer, '--code', code], 12000)
+  // No code → the sidecar tries the same-Apple-Account auto-pair
+  // (iCloud Keychain household key). Falls out with reason
+  // "no_household_key" when that path isn't available.
+  const args = code
+    ? ['pair', '--peer', peer, '--code', code]
+    : ['pair', '--peer', peer]
+  const result = await runSidecar(bin, args, 12000)
   const parsed = parseJsonLine(result.stdout.trim())
   if (!parsed) return { ok: false, reason: 'sidecar_error' }
   if (parsed.ok === true) return { ok: true, peer }

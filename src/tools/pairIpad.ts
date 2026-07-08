@@ -6,8 +6,8 @@ import { pairPeer, discoverPeers } from '../lib/multipeer'
 const pairIpadSchema = z.object({
   peer: z.string().min(1).max(120)
     .describe('Display name of the iPad as it appears in the discovery list (e.g. "Venu\'s iPad").'),
-  code: z.string().regex(/^\d{6}$/, 'pairing code must be exactly 6 digits')
-    .describe('The 6-digit code the iPad is currently displaying in Settings → cloud → show pairing code.')
+  code: z.string().regex(/^\d{6}$/, 'pairing code must be exactly 6 digits').optional()
+    .describe('The 6-digit code the iPad is currently displaying in Settings → cloud → show pairing code. OMIT to try automatic pairing first: when this Mac is signed into the same Apple Account as the iPad (iCloud Keychain on), pairing completes with no code and no pairing window. If auto-pair returns no_household_key, fall back to asking the user for the code.')
 }).describe('Inputs for pair_ipad.')
 
 export const pairIpad: ToolDefinition = {
@@ -18,20 +18,23 @@ export const pairIpad: ToolDefinition = {
       'directly via multipeer instead of waiting on iCloud sync.',
       '',
       '## UX flow',
-      '1. Ask the user to open Cecilia\'s Notes on the iPad, go to Settings → cloud,',
-      '   and tap "show pairing code". The iPad will display a 6-digit code and',
-      '   enter a 90-second pairing window.',
-      '2. Ask the user for that 6-digit code AND the iPad\'s name (you can call',
-      '   list_paired_ipads first to see what\'s visible; unpaired peers appear there too).',
-      '3. Call this tool with both values.',
+      '1. FIRST try calling this tool with just the peer name (no code). When the',
+      '   Mac and iPad share an Apple Account, pairing completes automatically via',
+      '   the iCloud Keychain household key — no code, nothing to do on the iPad.',
+      '   (macOS may show a one-time Keychain consent prompt naming the sidecar.)',
+      '2. If that returns no_household_key: ask the user to open Cecilia\'s Notes on',
+      '   the iPad → Settings → cloud → "show pairing code" (90-second window), then',
+      '   call again with the 6-digit code AND the iPad\'s name (list_paired_ipads',
+      '   shows what\'s visible; unpaired peers appear there too).',
       '',
       'On success the shared key is stored in the Mac\'s system Keychain and',
       'subsequent create_notebook calls auto-use multipeer.',
       '',
       'Returns: { ok: true, peer } on success, { ok: false, reason } otherwise.',
       'Reasons (from the iPad\'s pairing-result reply or local checks):',
-      '  wrong_code | no_pairing_window | peer_unreachable | no_peer_visible',
-      '  | hmac_rejected | sidecar_unavailable | session_failed | keychain_write_failed.'
+      '  wrong_code | no_pairing_window | no_household_key | peer_unreachable',
+      '  | no_peer_visible | hmac_rejected | sidecar_unavailable | session_failed',
+      '  | keychain_write_failed.'
     ].join('\n'),
     inputSchema: toolInputSchema(pairIpadSchema)
   },

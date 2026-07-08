@@ -1,6 +1,6 @@
 {
   "name": "cecilias-notes-mcp",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "MCP server for Cecilia's Notes — write notebooks from any AI agent",
   "main": "dist/index.js",
   "files": [

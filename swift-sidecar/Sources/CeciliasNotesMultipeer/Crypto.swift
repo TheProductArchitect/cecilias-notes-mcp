@@ -8,22 +8,45 @@ import CryptoKit
 /// the service type.
 enum Crypto {
     static let hkdfSalt = "ceciliasnotes.multipeer.v1.salt"
+    static let firstPartySalt = "ceciliasnotes.multipeer.v1.firstparty.salt"
+
+    /// Canonical HKDF info string. The iPad sorts the two peer names
+    /// lexicographically (`MultipeerPairingStore.peerPairInfo`) so
+    /// both ends derive identical keys regardless of who initiates —
+    /// the previous unsorted `local|remote` only matched when the
+    /// Mac's name happened to sort first.
+    static func pairInfo(localPeer: String, remotePeer: String) -> Data {
+        let ordered = [localPeer, remotePeer].sorted()
+        return Data("\(ordered[0])|\(ordered[1])".utf8)
+    }
 
     /// HKDF-SHA256 over the 6-digit code, with the salt + info string the spec
-    /// mandates. `localPeer` is whichever side is calling; `remotePeer` is
-    /// the other side. The roles must mirror on the iPad for the keys to match.
+    /// mandates.
     static func deriveSharedKey(
         code: String,
         localPeer: String,
         remotePeer: String
     ) -> SymmetricKey {
         let inputKey = SymmetricKey(data: Data(code.utf8))
-        let salt = Data(hkdfSalt.utf8)
-        let info = Data("\(localPeer)|\(remotePeer)".utf8)
         return HKDF<SHA256>.deriveKey(
             inputKeyMaterial: inputKey,
-            salt: salt,
-            info: info,
+            salt: Data(hkdfSalt.utf8),
+            info: pairInfo(localPeer: localPeer, remotePeer: remotePeer),
+            outputByteCount: 32
+        )
+    }
+
+    /// First-party auto-pair derivation — HKDF over the iCloud-Keychain
+    /// household key instead of a typed code. Same sorted info string.
+    static func deriveFirstPartyKey(
+        householdKey: SymmetricKey,
+        localPeer: String,
+        remotePeer: String
+    ) -> SymmetricKey {
+        HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: householdKey,
+            salt: Data(firstPartySalt.utf8),
+            info: pairInfo(localPeer: localPeer, remotePeer: remotePeer),
             outputByteCount: 32
         )
     }

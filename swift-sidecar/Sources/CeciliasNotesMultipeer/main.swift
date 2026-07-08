@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import MultipeerConnectivity
 
@@ -72,14 +73,33 @@ case "forget":
 
 case "pair":
     requireValidServiceType()
-    guard let peer = flag("peer"), let code = flag("code") else {
-        CLIOutput.usageError("pair requires --peer <name> --code <6-digits>")
+    guard let peer = flag("peer") else {
+        CLIOutput.usageError("pair requires --peer <name> [--code <6-digits>]")
     }
-    let candidateKey = Crypto.deriveSharedKey(
-        code: code,
-        localPeer: localPeerName,
-        remotePeer: peer
-    )
+    // Two derivations, one wire flow: a typed 6-digit code, or —
+    // when the Mac shares the iPad's Apple Account — the iCloud
+    // Keychain household key (no code, no pairing window needed;
+    // the receiver verifies against the same derivation).
+    let candidateKey: SymmetricKey
+    if let code = flag("code") {
+        candidateKey = Crypto.deriveSharedKey(
+            code: code,
+            localPeer: localPeerName,
+            remotePeer: peer
+        )
+    } else if let household = Keychain.loadHouseholdKey() {
+        candidateKey = Crypto.deriveFirstPartyKey(
+            householdKey: household,
+            localPeer: localPeerName,
+            remotePeer: peer
+        )
+    } else {
+        CLIOutput.emit([
+            "ok": false,
+            "reason": "no_household_key",
+            "detail": "No pairing code was given and the iCloud Keychain household key isn't readable. Ask the user for the 6-digit code from the iPad (Settings → cloud → show pairing code), or have them open Cecilia's Notes on this Mac once while signed into the same Apple Account."
+        ])
+    }
     let runner = SessionRunner(
         localPeer: localPeer,
         targetPeerName: peer,
