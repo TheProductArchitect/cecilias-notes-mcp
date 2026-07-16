@@ -1,4 +1,4 @@
-# Multipeer Sync — Wire Protocol (v2.3 — household exchange + hardening)
+# Multipeer Sync — Wire Protocol (v2.4 — live ink; sidecar unaffected)
 
 Direct device-to-device notebook delivery from a Mac running
 `cecilias-notes-mcp` to an iPad running Cecilia's Notes, bypassing
@@ -418,6 +418,22 @@ name happened to sort first — fixed in 2.2.0.)
   feature ships a notebook's `.inkbook` over the paired link from
   ANY platform. The receiver treats it exactly like an MCP write:
   Inbox → importer → merge-by-default.
+
+## v2.4 additions (app-to-app only — the sidecar is unaffected)
+
+- **`live-ink` message type.** Same-household app peers stream
+  throttled ephemeral drawing snapshots while a user draws (binary
+  body `[16B notebookId][16B pageId][8B seq BE][PKDrawing bytes]`,
+  standard HMAC envelope). The receiver renders them as a transient
+  overlay and persists NOTHING — CloudKit stays the durable path.
+  The sidecar neither sends nor consumes these; because it pairs
+  first-party (same household), a connected sidecar MAY receive
+  them mid-session while the iPad user draws. Sidecar ≥2.0.0 drops
+  unknown `type` values silently (`PayloadType(rawValue:)` guard in
+  `SessionRunner.handleIncoming`), which is the required behaviour:
+  **unknown message types MUST be ignored, never treated as an
+  error.** Full spec: the app repo's `MULTIPEER_SYNC_PROTOCOL.md`
+  §Live ink.
 
 ## Versioning
 
